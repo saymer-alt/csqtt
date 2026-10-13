@@ -1,0 +1,118 @@
+name: CSQTT one-time ARM64 owner-lab prerelease
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/owner-lab-prerelease-once.yml'
+permissions:
+  contents: read
+jobs:
+  pinned-arm64:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/keenetic-arm64-build' && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout reviewed feature source SHA only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 4471377492c5ace84689655ed2595c86f4e3e0bc
+          persist-credentials: false
+      - name: Pinned Rust and Zig
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --target aarch64-unknown-linux-musl
+          python3 -m venv /tmp/csqtt-tools
+          /tmp/csqtt-tools/bin/pip install ziglang==0.15.2
+          cargo +1.97.1 install cargo-zigbuild --version 0.23.4 --locked --root /tmp/csqtt-tools
+          echo /tmp/csqtt-tools/bin >> "$GITHUB_PATH"
+      - name: Build original pinned source, not PR synthetic merge
+        run: cargo +1.97.1 zigbuild --manifest-path rust-client/Cargo.toml --release --locked --target aarch64-unknown-linux-musl
+      - name: Check ELF and produce verifiable release assets
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "4471377492c5ace84689655ed2595c86f4e3e0bc" ]
+          mkdir -p release-assets
+          cp target/aarch64-unknown-linux-musl/release/client release-assets/csqtt-client-linux-arm64-musl
+          cp LICENSE release-assets/LICENSE
+          file release-assets/csqtt-client-linux-arm64-musl
+          readelf -h release-assets/csqtt-client-linux-arm64-musl > /tmp/csqtt-elf-h
+          readelf -l release-assets/csqtt-client-linux-arm64-musl > /tmp/csqtt-elf-l
+          readelf -d release-assets/csqtt-client-linux-arm64-musl > /tmp/csqtt-elf-d
+          grep -Eq 'Class: +ELF64' /tmp/csqtt-elf-h
+          grep -Eq 'Machine: +AArch64' /tmp/csqtt-elf-h
+          grep -Eq "Data: +2.s complement, little endian" /tmp/csqtt-elf-h
+          ! grep -q INTERP /tmp/csqtt-elf-l
+          ! grep -q '(NEEDED)' /tmp/csqtt-elf-d
+          (cd release-assets && sha256sum csqtt-client-linux-arm64-musl LICENSE) > release-assets/SHA256SUMS
+          {
+            echo 'Source repository: https://github.com/saymer-alt/csqtt'
+            echo 'Original upstream: https://github.com/amurcanov/csqtt'
+            echo 'Pinned source: 4471377492c5ace84689655ed2595c86f4e3e0bc'
+            echo 'Target: aarch64-unknown-linux-musl'
+            rustc +1.97.1 --version
+            /tmp/csqtt-tools/bin/pip show ziglang | grep '^Version: '
+            cargo-zigbuild --version
+            wc -c < release-assets/csqtt-client-linux-arm64-musl
+          } > release-assets/BUILD-INFO.txt
+          {
+            echo 'Required Notice: Copyright 2026 amurcanov.'
+            echo 'Commercial use of CSQTT requires a separate written license from the licensor.'
+            echo 'Redistributions and derivative works must retain original attribution and notices.'
+            echo 'PolyForm Noncommercial 1.0.0: see LICENSE.'
+          } > release-assets/REQUIRED-NOTICES.txt
+          {
+            echo 'CSQTT v2.1.9 — Keenetic ARM64 musl OWNER-LAB prerelease (NOT production-ready).'
+            echo
+            echo 'Standalone static Rust client. Neither router execution nor SOCKS5/TUN nor'
+            echo 'compatible server connectivity was validated on Keenetic at publication.'
+            echo 'Do not apply as a replacement for qWDTT or modify any production routes.'
+            echo
+            echo 'Pinned source commit: 4471377492c5ace84689655ed2595c86f4e3e0bc'
+            echo 'Target: aarch64-unknown-linux-musl'
+            echo 'License: PolyForm Noncommercial 1.0.0. Noncommercial use only.'
+          } > release-assets/RELEASE-NOTES.txt
+          cat release-assets/SHA256SUMS
+      - name: Upload transient verified files for publishing job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: csqtt-pinned-prerelease-files
+          path: release-assets/
+          retention-days: 7
+          if-no-files-found: error
+  prerelease:
+    needs: pinned-arm64
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/keenetic-arm64-build' && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: csqtt-pinned-prerelease-files
+          path: release-assets
+      - name: Publish only if tag and release do not already exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG=v2.1.9-keenetic-arm64-lab.1
+          if gh api "repos/$GH_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "RELEASE_OR_TAG_ALREADY_EXISTS_ABORT"; exit 1
+          fi
+          [ -s release-assets/csqtt-client-linux-arm64-musl ]
+          [ -s release-assets/SHA256SUMS ]
+          (cd release-assets && sha256sum -c SHA256SUMS)
+          gh release create "$TAG" \
+            release-assets/csqtt-client-linux-arm64-musl \
+            release-assets/SHA256SUMS \
+            release-assets/BUILD-INFO.txt \
+            release-assets/REQUIRED-NOTICES.txt \
+            release-assets/LICENSE \
+            --target 4471377492c5ace84689655ed2595c86f4e3e0bc \
+            --title "CSQTT v2.1.9 — Keenetic ARM64 lab.1 (experimental)" \
+            --notes-file release-assets/RELEASE-NOTES.txt \
+            --prerelease
+          gh release view "$TAG" --json tagName,isPrerelease,assets,url
