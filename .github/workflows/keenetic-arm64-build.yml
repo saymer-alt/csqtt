@@ -55,7 +55,7 @@ jobs:
             echo reference_commit=5c3cf032dade852a92bf1f2cf2bc6cd7008c428c
             rustc +1.97.1 --version
             cargo +1.97.1 --version
-            zig version
+            /tmp/csqtt-build-tools/bin/pip show ziglang | grep "^Version: "
             cargo-zigbuild --version
             wc -c < "$binary"
           } | tee evidence/provenance.txt
