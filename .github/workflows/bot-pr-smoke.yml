@@ -1,0 +1,41 @@
+# End-to-end proof that GITHUB_TOKEN can create Draft PRs in this repository
+# (task #9 stage D). Synthetic only: creates one throwaway branch with a
+# marker file, opens a Draft PR, and is never triggered automatically.
+# Cleanup (close PR + delete branch) is performed by the operator afterwards.
+name: Bot PR smoke test
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: bot-pr-smoke-${{ github.repository }}
+jobs:
+  smoke:
+    if: github.repository == 'saymer-alt/csqtt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+      - name: Create synthetic branch and Draft PR via GITHUB_TOKEN
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="test/bot-pr-smoke-${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          printf 'bot-pr smoke test %s\nrun: %s\nsynthetic file; no source changes; safe to close\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GITHUB_RUN_ID" > .github/bot-pr-smoke.txt
+          git add .github/bot-pr-smoke.txt
+          git commit -q -m "test(bot-pr-smoke): synthetic PR creation proof (run ${GITHUB_RUN_ID})"
+          git push origin "$branch"
+          url="$(gh pr create --draft --base main --head "$branch" \
+            --title '[smoke] bot Draft PR creation proof (close me)' \
+            --body 'Synthetic end-to-end proof that this repository allows GitHub Actions to create Draft PRs via GITHUB_TOKEN. No source changes (single marker file). Safe to close and delete the branch.')"
+          echo "SMOKE_PR_URL=$url" >> "$GITHUB_STEP_SUMMARY"
+          echo "smoke PR: $url"
