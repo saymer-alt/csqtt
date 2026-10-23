@@ -34,6 +34,16 @@
 
 ---
 
+
+## Ошибки, предложения и обратная связь
+
+- **Ошибка** — [форма Bug report](https://github.com/saymer-alt/csqtt/issues/new?template=bug_report.yml)
+- **Предложение** — [форма Feature request](https://github.com/saymer-alt/csqtt/issues/new?template=feature_request.yml)
+- **Свободный вопрос** — [обычный Issue без шаблона](https://github.com/saymer-alt/csqtt/issues/new)
+- **Уязвимость** — только приватно через [Report a vulnerability](https://github.com/saymer-alt/csqtt/security/advisories/new); не публикуйте технические детали в Issues.
+
+Перед публикацией обезличивайте материалы: без паролей, токенов, закрытых ключей, подписок, VPN-ключей и приватных IP-конфигураций.
+
 ## Лицензия
 
 Этот проект распространяется под лицензией **PolyForm Noncommercial License 1.0.0 (PolyForm-Noncommercial-1.0.0)**.
