@@ -548,7 +548,12 @@ mod platform {
                 ) as libc::c_int
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "musl"))]
+        {
+            // musl libc exposes this flags bitmask as c_uint.
+            unsafe { libc::recvmmsg(fd, messages, count, flags as libc::c_uint, timeout) }
+        }
+        #[cfg(all(target_os = "linux", not(target_env = "musl")))]
         {
             unsafe { libc::recvmmsg(fd, messages, count, flags, timeout) }
         }
@@ -572,7 +577,12 @@ mod platform {
                 ) as libc::c_int
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "musl"))]
+        {
+            // musl libc exposes this flags bitmask as c_uint.
+            unsafe { libc::sendmmsg(fd, messages, count, flags as libc::c_uint) }
+        }
+        #[cfg(all(target_os = "linux", not(target_env = "musl")))]
         {
             unsafe { libc::sendmmsg(fd, messages, count, flags) }
         }
@@ -639,18 +649,17 @@ mod platform {
     }
 
     fn mmsg_header(iovec: *mut libc::iovec) -> libc::mmsghdr {
-        libc::mmsghdr {
-            msg_hdr: libc::msghdr {
-                msg_name: ptr::null_mut(),
-                msg_namelen: 0,
-                msg_iov: iovec,
-                msg_iovlen: 1,
-                msg_control: ptr::null_mut(),
-                msg_controllen: 0,
-                msg_flags: 0,
-            },
-            msg_len: 0,
-        }
+        // musl libc::msghdr has private ABI padding fields, so initialize
+        // the complete C struct to zero and only set documented public fields.
+        let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
+        hdr.msg_name = ptr::null_mut();
+        hdr.msg_namelen = 0;
+        hdr.msg_iov = iovec;
+        hdr.msg_iovlen = 1;
+        hdr.msg_control = ptr::null_mut();
+        hdr.msg_controllen = 0;
+        hdr.msg_flags = 0;
+        libc::mmsghdr { msg_hdr: hdr, msg_len: 0 }
     }
 }
 
